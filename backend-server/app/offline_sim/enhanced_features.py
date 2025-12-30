@@ -18,7 +18,6 @@ def create_enhanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df['location_device_combo'] = df['location'] + '_' + df['device']
     df['location_dept_combo'] = df['location'] + '_' + df['department']
 
-    # ✅ FIXED: User behavioral patterns (handle single-row case)
     if len(df) == 1:
         # For single-event inference, use defaults
         df['location_user_pattern'] = 1  # Single unique location

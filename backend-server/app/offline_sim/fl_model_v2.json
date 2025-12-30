@@ -1,7 +1,7 @@
 {
   "version": 2,
   "schema": "context-anomaly-model",
-  "last_updated": "2025-08-25T22:14:15Z",
+  "last_updated": "2025-10-27T03:22:19Z",
   "decision": {
     "method": "logit_weighted",
     "threshold": 0.14026538687788287,

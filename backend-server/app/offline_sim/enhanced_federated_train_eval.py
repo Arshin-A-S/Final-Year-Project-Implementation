@@ -85,7 +85,7 @@ class EnsembleAnomalyDetector:
         # Learn ensemble weights via validation
         self._learn_ensemble_weights(X_scaled, y)
         
-        print("✅ Ensemble training completed!")
+        print("Ensemble training completed!")
     
     def _learn_ensemble_weights(self, X, y):
         """Learn optimal ensemble weights"""
@@ -213,7 +213,7 @@ def enhanced_federated_training(events_path: str, output_model_path: str):
 
 if __name__ == "__main__":
     # Generate enhanced synthetic data
-    print("📊 Generating enhanced synthetic data...")
+    print("Generating enhanced synthetic data...")
     # Run your enhanced_synthetic_data_gen.py first
     
     # Train ensemble model
@@ -222,4 +222,4 @@ if __name__ == "__main__":
         "enhanced_fl_model.json"
     )
     
-    print(f"\n✅ Enhanced model saved with {auc:.4f} ROC-AUC!")
+    print(f"\nEnhanced model saved with {auc:.4f} ROC-AUC!")

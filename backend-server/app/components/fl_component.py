@@ -38,7 +38,7 @@ class FLComponent:
         if "schema" not in model or model["schema"] != "context-anomaly-model":
             raise ValueError(f"The model at {self.model_path} is not a valid v2 context anomaly model.")
         
-        print("✅ Federated Learning model loaded successfully.")
+        print("Federated Learning model loaded successfully.")
         return model
 
     def _hour_to_bucket(self, hour: int) -> str:

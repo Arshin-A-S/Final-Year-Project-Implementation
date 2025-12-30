@@ -51,7 +51,7 @@ class CLIApp:
         res, code = self.user_cli.login(username)
         if code == 200 and res.get("ok"):
             self.logged_in = res["user"]
-            self.logged_in["username"] = username  # ✅ ADD THIS LINE
+            self.logged_in["username"] = username
             print("Logged in:", self.logged_in["id"])
         else:
             print("Login failed", res)
@@ -102,7 +102,7 @@ class CLIApp:
         features = [hour, 0, 0]
         save_to = input("Save to filename: ").strip() or "downloaded.bin"
         
-        # ✅ FIXED: Use stored username instead of user ID
+        # FIXED: Use stored username instead of user ID
         res, code = self.file_cli.download_file(self.logged_in["username"], fid, {"location":loc,"device":dev,"department":dept}, features, save_to)
         print(res)
 
