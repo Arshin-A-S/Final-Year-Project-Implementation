@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_file
 import os
 import uuid
 import json
+from web3 import Web3
 
 from components.crypto_component import CryptoComponent
 from components.s3_component import S3Component
@@ -30,6 +31,48 @@ file_comp = FileComponent()
 
 UPLOAD_TEMP_DIR = "uploads"
 os.makedirs(UPLOAD_TEMP_DIR, exist_ok=True)
+
+# --- Blockchain Configuration ---
+# Use the RPC URL from your Anvil terminal
+RPC_URL = "http://127.0.0.1:8545"
+w3 = Web3(Web3.HTTPProvider(RPC_URL))
+CONTRACT_ADDRESS ="0x5FbDB2315678afecb367f032d93F642f64180aa3"
+CONTRACT_ABI = [
+    {
+        "type": "function",
+        "name": "logAccess",
+        "inputs": [
+            {"name": "_username", "type": "string"},
+            {"name": "_fileId", "type": "string"},
+            {"name": "_action", "type": "string"},
+            {"name": "_granted", "type": "bool"},
+            {"name": "_reason", "type": "string"}
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    }
+]
+contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
+# Using the first default account from Anvil
+PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+ACCOUNT_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+def log_to_blockchain(username, file_id, action, granted, reason):
+    """Sends an access audit log to the Ethereum Smart Contract."""
+    try:
+        nonce = w3.eth.get_transaction_count(ACCOUNT_ADDRESS)
+        tx = contract.functions.logAccess(
+            username, file_id, action, granted, reason
+        ).build_transaction({
+            'from': ACCOUNT_ADDRESS,
+            'nonce': nonce,
+            'gas': 200000,
+            'gasPrice': w3.to_wei('20', 'gwei')
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        print(f"Blockchain Audit Logged: {file_id} for {username} (TX: {w3.to_hex(tx_hash)})")
+    except Exception as e:
+        print(f"Blockchain logging failed: {e}")
 
 # ---------------- Register ----------------
 @app.route("/register", methods=["POST"])
@@ -103,13 +146,14 @@ def upload():
         print(f"Waters11 encryption failed: {e}")
         return jsonify({"success": False, "error": f"encryption failed: {str(e)}"}), 500
 
-    # ✅ BACK TO S3 UPLOAD (using real credentials)
+    #BACK TO S3 UPLOAD (using real credentials)
     s3_key = f"enc/{uuid.uuid4()}_{fname}.enc"
     if not s3c.upload_file(meta["enc_file_path"], s3_key):
         return jsonify({"success": False, "error": "s3 upload failed"}), 500
 
     # Register in database
     fid = file_comp.register_encrypted_file(username, meta, s3_key=s3_key)
+    log_to_blockchain(username, fid, "UPLOAD", True, f"Policy: {policy}")
 
     # Handle context policies
     applied_policy = None
@@ -139,7 +183,7 @@ def upload():
             context_comp.add_policy(fid, cp)
             file_comp.set_context_policy(fid, cp)
 
-    # Clean up local encrypted file after S3 upload
+    #Clean up local encrypted file after S3 upload
     try:
         os.remove(meta["enc_file_path"])
         os.remove(local_path)  # Also remove original temp file
@@ -178,9 +222,11 @@ def download():
     # Normalize device key
     if "device" in context and "device_id" not in context:
         context["device_id"] = context["device"]
+    context["client_id"] = username
 
     # Context-aware access control
     if not context_comp.check_access(fid, context):
+        log_to_blockchain(username, fid, "DOWNLOAD", False, "Context Policy Denied")
         return jsonify({"success": False, "error": "context policy denied"}), 403
 
     # FL anomaly check
@@ -193,9 +239,10 @@ def download():
         threshold = fl_comp.model.get("global_threshold", 0.6)
     #threshold = 1.5  # Temporarily disable FL checks
     if score >= threshold:
+        log_to_blockchain(username, fid, "DOWNLOAD", False, f"FL Anomaly (Score: {score})")
         return jsonify({"success": False, "error": "access flagged", "score": score}), 403
 
-    # ✅ BACK TO S3 DOWNLOAD
+    #BACK TO S3 DOWNLOAD
     s3_key = fmeta.get("s3_key")
     if not s3_key:
         return jsonify({"success": False, "error": "file not in s3"}), 500
@@ -220,6 +267,19 @@ def download():
     try:
         crypto.load_master_keys()
         dec_path = crypto.decrypt_file_hybrid(encrypted_meta, abe_sk_b64)
+        
+        # Log success to Blockchain
+        log_to_blockchain(username, fid, "DOWNLOAD", True, "Authorized and Decrypted")
+        
+        # NEW: Check if the user wants a Post-Quantum Secure transfer
+        pqc_pub_key = j.get("pqc_public_key")
+        if pqc_pub_key:
+            with open(dec_path, 'rb') as f:
+                pqc_package = crypto.pqc_encrypt_wrap(f.read(), pqc_pub_key)
+            
+            # Clean up decrypted file before sending JSON
+            os.remove(dec_path) 
+            return jsonify({"success": True, "pqc_package": pqc_package})
     except Exception as e:
         return jsonify({"success": False, "error": f"Waters11 decryption failed: {e}"}), 500
 
@@ -231,6 +291,6 @@ def download():
 
     return send_file(dec_path, as_attachment=True, download_name=fmeta["orig_filename"])
 
-# ✅ ADD THIS CRITICAL CODE TO START THE SERVER
+#ADD THIS CRITICAL CODE TO START THE SERVER
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

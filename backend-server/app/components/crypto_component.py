@@ -3,6 +3,7 @@ import base64
 from typing import Any, Dict
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+import oqs
 import json
 
 try:
@@ -162,7 +163,7 @@ class CryptoComponent:
             print(f"Waters11 key generation failed: {e}")
             raise
 
-    # ✅ FIXED: Serialize only group elements, handle policy separately
+    # Serialize only group elements, handle policy separately
     def _serialize_ciphertext(self, ct: dict) -> dict:
         """Serialize each GROUP ELEMENT in the ciphertext dict to base64 string."""
         ser_ct = {}
@@ -182,7 +183,8 @@ class CryptoComponent:
                     ser_ct[key] = base64.b64encode(objectToBytes(ct[key], self.group)).decode("utf-8")
         
         return ser_ct
-
+    
+        
     def _deserialize_ciphertext(self, ser_ct: dict) -> dict:
         """Deserialize each element in ciphertext dict from base64 string."""
         ct = {}
@@ -215,7 +217,7 @@ class CryptoComponent:
                 raise ValueError("Waters11 encryption returned None")
             print(f"Waters11 encryption successful, ciphertext type: {type(ct)}")
             
-            # ✅ FIXED: Serialize only group elements, store policy separately
+            # Serialize only group elements, store policy separately
             ser_ct = self._serialize_ciphertext(ct)
             
             result = {
@@ -241,7 +243,7 @@ class CryptoComponent:
             ct_group_elements = self._deserialize_ciphertext(result['ct'])
             random_msg = self._obj_from_b64(result['random_msg_b64'])
             
-            # ✅ FIXED: Reconstruct the policy object for decryption
+            # Reconstruct the policy object for decryption
             policy_str = result['policy_str']
             policy_obj = self.cpabe.util.createPolicy(policy_str)
             ct_group_elements['policy'] = policy_obj
@@ -289,6 +291,28 @@ class CryptoComponent:
 
         _aes_decrypt_file(meta["enc_file_path"], out_plain_path, aes_key)
         return out_plain_path
+    
+    def pqc_encrypt_wrap(self, data_bytes, public_key_hex):
+        """
+        Wraps the decrypted file data in a Kyber-768 Quantum-Safe envelope
+        before sending it to the user.
+        """
+        public_key = bytes.fromhex(public_key_hex)
+        
+        with oqs.KeyEncapsulation("Kyber768") as kem:
+            # 1. Encapsulate a shared secret using the user's PQC public key
+            ciphertext, shared_secret = kem.encapsulate(public_key)
+            
+            # 2. Use the shared secret for symmetric encryption (AES-GCM)
+            from Cryptodome.Cipher import AES
+            cipher = AES.new(shared_secret, AES.MODE_GCM)
+            ciphertext_body, tag = cipher.encrypt_and_digest(data_bytes)
+            
+            # Return the KEM ciphertext and the wrapped data
+            return {
+                "kem_ct": ciphertext.hex(),
+                "wrapped_payload": (cipher.nonce + tag + ciphertext_body).hex()
+            }
 
 if __name__ == "__main__":
     cc = CryptoComponent()
